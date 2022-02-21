@@ -1,0 +1,85 @@
+---
+title: "CRAN Anomaly"
+author: "Stephan"
+date: "2/21/2022"
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+knitr::opts_chunk$set(echo = FALSE, messages = FALSE, warning = FALSE)
+library(rvest)
+library(tidyr)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(stringr)
+theme_set(theme_light())
+get_cran_date <- function(url){
+  read_html(url) %>% 
+    html_element(xpath = "/html/body/div/table[1]") %>% 
+    html_table() %>% 
+    filter(grepl("publish", X1, ignore.case = TRUE)) %>% 
+    pull(X2)
+}
+
+
+cran_htmls <- read_html("https://github.com/pridiltal/ctv-AnomalyDetection") %>% 
+  html_elements(xpath = '//*[@id="readme"]/div[2]/article/div') %>% 
+  as.character() %>% 
+  str_match_all(., '<a href=\"(.*?)\"') %>% 
+  .[[1]] %>% 
+  as_tibble(.name_repair = "universal") %>% 
+  filter(grepl("cran", ...2)) %>% 
+  pull(2)
+
+published_dates <- cran_htmls %>% 
+  as_tibble() %>% 
+  rowwise() %>% 
+  mutate(published = get_cran_date(value))
+
+get_cran_downloads <- function(package, published) {
+  print(paste0("Reading: ", package))
+  cranlogs::cran_downloads(package, from = published)
+}
+
+downloads <- published_dates %>% 
+  mutate(age = today() - ymd(published),
+         package = str_remove(value, "https://cran.r-project.org/package=")) %>% 
+  arrange(age) %>% 
+  select(published, age, package) %>% 
+  distinct() %>% 
+  mutate(downloads = list(get_cran_downloads(package, published)))
+
+
+
+
+```
+
+```{r}
+
+downloads %>% 
+  ungroup() %>% 
+  .[4] %>% 
+  unnest(downloads) %>% 
+  count(package, wt = count, sort = TRUE) %>% 
+  right_join(downloads) %>% 
+  mutate(hotness = n/as.numeric(age)) %>% 
+  arrange(desc(hotness)) %>% 
+  print(n = 200) %>% 
+  ggplot(aes(n, hotness)) +
+  geom_point() +
+  scale_x_continuous(labels = scales::number_format()) +
+  labs(x = "Downloads",
+       y = "Downloads per day",
+       title = "Downloads of Anomaly Detection cran packages",
+       subtitle = "Source: https://github.com/pridiltal/ctv-AnomalyDetection")
+
+
+```
+
